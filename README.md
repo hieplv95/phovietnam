@@ -8,6 +8,7 @@ Giao diện giữ y nguyên vì dùng lại chính HTML, CSS và JS mà WordPres
 
 - `scripts/import-wp.mjs` đọc HTML đã render của từng trang trên web gốc, bỏ những phần cần máy chủ WordPress (form bình luận, REST API, plugin rút gọn link, emoji…), rồi lưu vào `content/pages/*.json`. Script cũng chép đúng những file CSS/JS/ảnh/font mà các trang dùng từ source WordPress sang `public/wp-content/` và `public/wp-includes/`.
 - `app/[[...slug]]/route.ts` trả về các tài liệu HTML đó. Toàn bộ trang được dựng tĩnh lúc build (SSG), Vercel phục vụ từ CDN.
+- `scripts/fixes.mjs` sửa những phần còn sót từ bản demo của theme (link demo, bản đồ London, chữ "Patio.Time"…) và bật Google Consent Mode theo banner cookie. Các bản sửa được áp dụng mỗi lần import nên không bị mất.
 - PDF lớn hơn 10MB được nén lại bằng `scripts/compress-pdf.mjs` (thực đơn 311MB còn 6.8MB).
 - `next.config.ts`: giữ URL có dấu `/` ở cuối như WordPress, chuyển hướng 301 các trang mẫu của theme và sitemap cũ của Yoast.
 - `app/sitemap.ts` và `app/robots.ts` thay cho plugin Yoast.

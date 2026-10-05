@@ -11,6 +11,8 @@ import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import * as cheerio from "cheerio";
+import sharp from "sharp";
+import { applyFixes } from "./fixes.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const WP_DIR = process.env.WP_DIR || path.join(os.homedir(), "Downloads", "cgi-bin");
@@ -23,6 +25,8 @@ const USE_CACHE = process.argv.includes("--cached");
 const ROOT_FILES = ["menu-pho-vietnam-.pdf"];
 // PDFs above this size get re-rendered by scripts/compress-pdf.mjs.
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
+// Wider images are downscaled in place (the logo was uploaded at 33072px).
+const MAX_IMAGE_WIDTH = 2400;
 
 // Pages that belong to the real site. The theme's demo pages (about, contact,
 // tea-drinks-menu, shop, ...) are redirected in next.config.ts instead.
@@ -120,6 +124,7 @@ function convertPage(html, urlPath) {
   });
   // Comments are closed (only unapproved spam exists): drop the form/area.
   $("#comments, .comments-area, #respond").remove();
+  applyFixes($);
 
   // Protect SEO tags from relativize() by swapping them for placeholders.
   const kept = [];
@@ -193,6 +198,20 @@ function compressLargePdfs(files) {
   }
 }
 
+async function shrinkHugeImages(files) {
+  for (const p of files) {
+    if (!/.(png|jpe?g|webp)$/i.test(p)) continue;
+    const dest = path.join(PUBLIC, p);
+    if (!fs.existsSync(dest)) continue;
+    const { width } = await sharp(dest).metadata();
+    if (!width || width <= MAX_IMAGE_WIDTH) continue;
+    const before = fs.statSync(dest).size;
+    const out = await sharp(dest).resize({ width: MAX_IMAGE_WIDTH }).toBuffer();
+    fs.writeFileSync(dest, out);
+    console.log(`  resized ${p}: ${width}px -> ${MAX_IMAGE_WIDTH}px, ${(before / 1024).toFixed(0)} KB -> ${(out.length / 1024).toFixed(0)} KB`);
+  }
+}
+
 function copyDir(rel, filter = () => true) {
   const src = path.join(WP_DIR, rel);
   if (!fs.existsSync(src)) return;
@@ -258,6 +277,7 @@ async function main() {
   for (const p of assets) await copyAsset(p, seen);
   for (const f of ROOT_FILES) await copyAsset("/" + f, seen);
   compressLargePdfs([...seen].filter((p) => p.endsWith(".pdf")));
+  await shrinkHugeImages([...seen]);
   console.log(`done: ${index.length} pages, ${seen.size} assets`);
 }
 
