@@ -4,6 +4,7 @@
 
 const SITE = "https://phovietnam.es";
 const MENU_PDF = "/menu-pho-vietnam-.pdf";
+const MENU_PDF_URL = "https://www.phovietnam.es/menu-pho-vietnam-.pdf";
 const MAPS_MARIA_CLARET =
   "https://www.google.com/maps/search/?api=1&query=" +
   encodeURIComponent("PHO VIETNAM, Carrer de Sant Antoni Maria Claret 230, 08025 Barcelona");
@@ -57,6 +58,11 @@ export function applyFixes($) {
 
   // Signature dish buttons (SET BANH CUON, GOI TOM, ...) pointed at demo menus.
   $('a[href*="patiotime.loftocean.com/demo11/"]').attr("href", MENU_PDF);
+
+  // "VER LAS CARTAS" / "LAS CARTAS COMPLETAS" use the canonical www URL of the menu.
+  $("a")
+    .filter((_, a) => /^\s*(ver las cartas|las cartas completas)\s*$/i.test($(a).text()))
+    .attr("href", MENU_PDF_URL);
 
   // The Maria Claret address linked to the Barbican Centre in London.
   $('a[href*="Barbican"]').attr("href", MAPS_MARIA_CLARET).attr("target", "_blank").attr("rel", "noopener");
