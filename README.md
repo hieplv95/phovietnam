@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PHO VIETNAM — phovietnam.es
 
-## Getting Started
+Bản Next.js của website phovietnam.es (trước đây là WordPress + Elementor, theme Patiotime), để deploy lên Vercel.
 
-First, run the development server:
+## Cách hoạt động
+
+Giao diện giữ y nguyên vì dùng lại chính HTML, CSS và JS mà WordPress xuất ra:
+
+- `scripts/import-wp.mjs` đọc HTML đã render của từng trang trên web gốc, bỏ những phần cần máy chủ WordPress (form bình luận, REST API, plugin rút gọn link, emoji…), rồi lưu vào `content/pages/*.json`. Script cũng chép đúng những file CSS/JS/ảnh/font mà các trang dùng từ source WordPress sang `public/wp-content/` và `public/wp-includes/`.
+- `app/[[...slug]]/route.ts` trả về các tài liệu HTML đó. Toàn bộ trang được dựng tĩnh lúc build (SSG), Vercel phục vụ từ CDN.
+- PDF lớn hơn 10MB được nén lại bằng `scripts/compress-pdf.mjs` (thực đơn 311MB còn 6.8MB).
+- `next.config.ts`: giữ URL có dấu `/` ở cuối như WordPress, chuyển hướng 301 các trang mẫu của theme và sitemap cũ của Yoast.
+- `app/sitemap.ts` và `app/robots.ts` thay cho plugin Yoast.
+
+## Chạy trên máy
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Cập nhật nội dung
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Nội dung lấy từ web WordPress đang chạy và source code WordPress (mặc định ở `~/Downloads/cgi-bin`):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run import
+```
 
-## Learn More
+Có thể chỉ định đường dẫn khác bằng `WP_DIR=/duong/dan/cgi-bin npm run import`. Thêm `--cached` để dùng lại HTML đã tải trong `.wp-cache/`. Muốn thêm hoặc bớt trang thì sửa danh sách `PAGES` trong `scripts/import-wp.mjs`.
 
-To learn more about Next.js, take a look at the following resources:
+## Deploy lên Vercel
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Đẩy repo này lên GitHub.
+2. Trên vercel.com, chọn **Add New → Project**, import repo, giữ nguyên cấu hình mặc định (Next.js) rồi bấm Deploy.
+3. Kiểm tra bản `*.vercel.app`, sau đó vào **Settings → Domains**, thêm `phovietnam.es` và `www.phovietnam.es`, rồi sửa DNS ở nhà cung cấp tên miền theo hướng dẫn của Vercel.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Lưu ý: sau khi tên miền đã trỏ sang Vercel, lệnh `npm run import` không còn đọc được WordPress nữa. Khi cần, hãy chạy import trên một bản WordPress còn hoạt động (đặt `WP_ORIGIN`).
