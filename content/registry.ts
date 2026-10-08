@@ -14,6 +14,7 @@ import p11 from "./pages/cafe-de-filtro-vietnamita.json";
 import p12 from "./pages/la-comida-callejera-de-vietnam.json";
 import p13 from "./pages/gastronomia-vietnamita.json";
 import p14 from "./pages/platos-vietnamitas.json";
+import p15 from "./pages/en.json";
 import notFound from "./pages/_404.json";
 
 export const pages = {
@@ -32,6 +33,7 @@ export const pages = {
   "/la-comida-callejera-de-vietnam/": p12,
   "/gastronomia-vietnamita/": p13,
   "/platos-vietnamitas/": p14,
+  "/en/": p15,
 };
 
 export { notFound };

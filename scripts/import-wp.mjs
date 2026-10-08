@@ -13,6 +13,8 @@ import { execFileSync } from "node:child_process";
 import * as cheerio from "cheerio";
 import sharp from "sharp";
 import { applyFixes } from "./fixes.mjs";
+import { applySeo, derivedImages } from "./seo.mjs";
+import { translateToEnglish } from "./en.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const WP_DIR = process.env.WP_DIR || path.join(os.homedir(), "Downloads", "cgi-bin");
@@ -27,6 +29,10 @@ const ROOT_FILES = ["menu-pho-vietnam-.pdf"];
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 // Wider images are downscaled in place (the logo was uploaded at 33072px).
 const MAX_IMAGE_WIDTH = 2400;
+// Images shown much smaller than any generic limit.
+const IMAGE_WIDTH_OVERRIDES = {
+  "/wp-content/uploads/2025/06/logo-ko-nen.png": 720, // shown at 180px
+};
 
 // Pages that belong to the real site. The theme's demo pages (about, contact,
 // tea-drinks-menu, shop, ...) are redirected in next.config.ts instead.
@@ -105,11 +111,10 @@ const DROP_HEAD = [
   'link[rel="alternate"]', 'meta[name="generator"]', 'meta[name="msapplication-TileImage"]',
 ].join(", ");
 // Head elements whose absolute URLs must stay absolute (SEO / social cards).
-const KEEP_ABSOLUTE = 'link[rel="canonical"], meta[property^="og:"], meta[property^="article:"], meta[name^="twitter:"], script[type="application/ld+json"]';
+const KEEP_ABSOLUTE = 'link[rel="canonical"], link[rel="alternate"][hreflang], meta[property^="og:"], meta[property^="article:"], meta[name^="twitter:"], script[type="application/ld+json"]';
 
-function convertPage(html, urlPath) {
+function convertPage(html, urlPath, { english = false } = {}) {
   const $ = cheerio.load(html);
-  const title = $("head > title").text();
   const modified =
     $('meta[property="article:modified_time"]').attr("content") ||
     $('meta[property="article:published_time"]').attr("content") ||
@@ -125,6 +130,8 @@ function convertPage(html, urlPath) {
   // Comments are closed (only unapproved spam exists): drop the form/area.
   $("#comments, .comments-area, #respond").remove();
   applyFixes($);
+  if (english) translateToEnglish($);
+  applySeo($, urlPath);
 
   // Protect SEO tags from relativize() by swapping them for placeholders.
   const kept = [];
@@ -137,7 +144,7 @@ function convertPage(html, urlPath) {
   collectAssets(doc);
   doc = doc.replace(/<!--keep:(\d+)-->/g, (_, i) => kept[Number(i)]);
 
-  return { path: urlPath, title, modified, html: doc };
+  return { path: urlPath, title: $("head > title").text(), modified, html: doc };
 }
 
 // ---------- asset copying ----------
@@ -148,7 +155,7 @@ function localSource(p) {
 }
 
 async function copyAsset(p, seen) {
-  if (seen.has(p)) return;
+  if (seen.has(p) || derivedImages.has(p)) return;
   seen.add(p);
   // Base URLs in script configs (e.g. ".../elementor/assets/") are not files.
   if (!/\.[a-z0-9]+$/i.test(p)) return;
@@ -198,18 +205,34 @@ function compressLargePdfs(files) {
   }
 }
 
-async function shrinkHugeImages(files) {
+
+// Downscales oversized images and re-encodes JPEG/PNG files in place when that
+// saves a meaningful amount, so every existing URL keeps working.
+async function optimizeImages(files) {
+  let saved = 0;
   for (const p of files) {
-    if (!/.(png|jpe?g|webp)$/i.test(p)) continue;
+    if (!/\.(png|jpe?g)$/i.test(p)) continue;
     const dest = path.join(PUBLIC, p);
     if (!fs.existsSync(dest)) continue;
-    const { width } = await sharp(dest).metadata();
-    if (!width || width <= MAX_IMAGE_WIDTH) continue;
-    const before = fs.statSync(dest).size;
-    const out = await sharp(dest).resize({ width: MAX_IMAGE_WIDTH }).toBuffer();
+    const before = fs.readFileSync(dest);
+    const { width, format } = await sharp(before).metadata();
+    const maxWidth = IMAGE_WIDTH_OVERRIDES[p] ?? MAX_IMAGE_WIDTH;
+    let img = sharp(before);
+    if (width > maxWidth) img = img.resize({ width: maxWidth });
+    const out =
+      format === "png"
+        ? await img.png({ palette: true, quality: 85, compressionLevel: 9 }).toBuffer()
+        : await img.jpeg({ quality: 80, mozjpeg: true }).toBuffer();
+    const resized = width > maxWidth;
+    // Keep the original unless it was resized or the re-encode is >15% smaller.
+    if (!resized && out.length > before.length * 0.85) continue;
     fs.writeFileSync(dest, out);
-    console.log(`  resized ${p}: ${width}px -> ${MAX_IMAGE_WIDTH}px, ${(before / 1024).toFixed(0)} KB -> ${(out.length / 1024).toFixed(0)} KB`);
+    saved += before.length - out.length;
+    if (resized || before.length > 500 * 1024) {
+      console.log(`  optimized ${p}: ${(before.length / 1024).toFixed(0)} KB -> ${(out.length / 1024).toFixed(0)} KB`);
+    }
   }
+  console.log(`  images: saved ${(saved / 1024 / 1024).toFixed(1)} MB`);
 }
 
 function copyDir(rel, filter = () => true) {
@@ -244,6 +267,11 @@ async function main() {
     fs.writeFileSync(path.join(OUT, slug + ".json"), JSON.stringify(page, null, 1));
     index.push({ path: p, slug, modified: page.modified });
   }
+  // English home page, generated from the Spanish one (see scripts/en.mjs).
+  const en = convertPage(await getHtml("/"), "/en/", { english: true });
+  fs.writeFileSync(path.join(OUT, "en.json"), JSON.stringify(en, null, 1));
+  index.push({ path: "/en/", slug: "en", modified: en.modified });
+
   const nf = convertPage(await getHtml(NOT_FOUND_PROBE), "/404/");
   fs.writeFileSync(path.join(OUT, "_404.json"), JSON.stringify(nf, null, 1));
   fs.writeFileSync(path.join(ROOT, "content", "pages.json"), JSON.stringify(index, null, 1));
@@ -277,7 +305,15 @@ async function main() {
   for (const p of assets) await copyAsset(p, seen);
   for (const f of ROOT_FILES) await copyAsset("/" + f, seen);
   compressLargePdfs([...seen].filter((p) => p.endsWith(".pdf")));
-  await shrinkHugeImages([...seen]);
+  await optimizeImages([...seen]);
+  for (const [web, src] of derivedImages) {
+    await copyAsset(src, seen);
+    await sharp(path.join(PUBLIC, src))
+      .resize({ width: 1600, withoutEnlargement: true })
+      .jpeg({ quality: 75, mozjpeg: true })
+      .toFile(path.join(PUBLIC, web));
+  }
+  console.log(`  ${derivedImages.size} header backgrounds as web-sized JPEG`);
   console.log(`done: ${index.length} pages, ${seen.size} assets`);
 }
 
