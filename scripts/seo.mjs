@@ -208,12 +208,27 @@ var b = document.querySelector("#cmplz-cookiebanner-container .cmplz-cookiebanne
 if (b) { b.classList.remove("cmplz-hidden"); b.classList.add("cmplz-show"); }
 })();</script>`);
 
-  // ---- Reservation widgets: below the fold, so load them lazily ----
-  $('iframe[src*="widget.thefork.com"]').each((_, el) => {
-    const id = ($(el).attr("src") || "").split("/").pop().split("?")[0];
-    $(el).attr("loading", "lazy");
+  // ---- Reservation widgets: load them only when scrolled near ----
+  // loading="lazy" still fetched them on page load (they sit within Chrome's
+  // lazy-load distance), along with TheFork's bot-protection scripts.
+  const forks = $('iframe[src*="widget.thefork.com"]');
+  forks.each((_, el) => {
+    const src = $(el).attr("src") || "";
+    const id = src.split("/").pop().split("?")[0];
+    $(el).attr("data-pv-src", src).removeAttr("src").attr("loading", "lazy");
     if (THEFORK_TITLES[id]) $(el).attr("title", pick(THEFORK_TITLES[id]));
   });
+  if (forks.length) {
+    $("body").append(`<script id="pv-lazy-iframes">(function(){
+var frames = document.querySelectorAll("iframe[data-pv-src]");
+function load(f){ if (!f.src) f.src = f.getAttribute("data-pv-src"); }
+if (!("IntersectionObserver" in window)) { frames.forEach(load); return; }
+var io = new IntersectionObserver(function (entries) {
+  entries.forEach(function (e) { if (e.isIntersecting) { load(e.target); io.unobserve(e.target); } });
+}, { rootMargin: "400px 0px" });
+frames.forEach(function (f) { io.observe(f); });
+})();</script>`);
+  }
 
   // ---- Home: hero image, structured data, language alternates ----
   if (urlPath === "/" || urlPath === "/en/") {
