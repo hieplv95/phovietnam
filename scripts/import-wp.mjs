@@ -306,10 +306,10 @@ async function main() {
   for (const f of ROOT_FILES) await copyAsset("/" + f, seen);
   compressLargePdfs([...seen].filter((p) => p.endsWith(".pdf")));
   await optimizeImages([...seen]);
-  for (const [web, src] of derivedImages) {
+  for (const [web, { src, width }] of derivedImages) {
     await copyAsset(src, seen);
     await sharp(path.join(PUBLIC, src))
-      .resize({ width: 1600, withoutEnlargement: true })
+      .resize({ width, withoutEnlargement: true })
       .jpeg({ quality: 75, mozjpeg: true })
       .toFile(path.join(PUBLIC, web));
   }
